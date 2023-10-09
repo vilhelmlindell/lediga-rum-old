@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "lediga-rum"
+version = "0.1.0"
+description = ""
+authors = ["Vilhelm <vilhelm.lindell123@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+selenium = "^4.13.0"
+numpy = "^1.26.0"
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

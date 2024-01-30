@@ -1,4 +1,5 @@
 import numpy as np
+import json
 import pickle
 import time
 from multiprocessing.pool import ThreadPool as Pool
@@ -72,7 +73,12 @@ INCLUDED_CLASSROOMS = [
     "G23",
     "G24 foto",
 ]
+WEEK_BUTTON_XPATH = (
+    "/html/body/div[3]/div[2]/div/div[2]/div[1]/div[2]/div/ul/li[1]/button"
+)
 POLL_INTERVAL = 0.5
+
+SHOULD_UPDATE_ROOM_INDICES = False
 
 
 def initialize_driver():
@@ -90,36 +96,34 @@ def get_room_name(room_button):
     return room_button.get_property("innerHTML")
 
 
-def get_lesson_times(driver, room_button):
-    room_button.click()
-
+def get_lesson_times(driver):
     timetable = wait_and_get_element(driver, TIMETABLE_XPATH).find_elements(
         By.XPATH, "./*"
     )
 
-    current_date = datetime.today()
+    # day = min(1 + datetime.today().weekday(), 5)
+    days = []
+    for day in range(1, 6):
+        day_element = timetable[day]
+        day_start_x = int(day_element.get_attribute("x"))
+        day_end_x = day_start_x + int(day_element.get_attribute("width"))
 
-    day_element = timetable[1 + current_date.weekday()]
-    day_start_x = int(day_element.get_attribute("x"))
-    day_end_x = day_start_x + int(day_element.get_attribute("width"))
+        lesson_times = []
 
-    lesson_times = []
+        for element in timetable:
+            text = element.get_property("innerHTML").strip()
 
-    for element in timetable:
-        text = element.get_property("innerHTML").strip()
+            try:
+                lesson_time = str(datetime.strptime(text, "%H:%M").time())
+                x = int(element.get_attribute("x"))
 
-        try:
-            lesson_time = datetime.strptime(text, "%H:%M").time()
-            x = int(element.get_attribute("x"))
+                if day_start_x <= x <= day_end_x:
+                    lesson_times.append(lesson_time)
 
-            if day_start_x <= x <= day_end_x:
-                lesson_times.append(lesson_time)
-
-        except ValueError:
-            pass
-
-    driver.back()
-    return list(zip(lesson_times[0::2], lesson_times[1::2]))
+            except ValueError:
+                pass
+        days.append(list(zip(lesson_times[0::2], lesson_times[1::2])))
+    return days
 
 
 def get_room_indices():
@@ -184,7 +188,9 @@ def get_room_info(button_indices):
             print(len(room_buttons))
         room_name = get_room_name(room_buttons[i]).strip()
 
-        lesson_times = get_lesson_times(driver, room_buttons[i])
+        room_buttons[i].click()
+        lesson_times = get_lesson_times(driver)
+        driver.get(URL)
         rooms.append((room_name, lesson_times))
 
     driver.quit()
@@ -193,10 +199,17 @@ def get_room_info(button_indices):
 
 
 def save_lesson_times():
-    pool_size = 4
+    if SHOULD_UPDATE_ROOM_INDICES:
+        room_indices = get_room_indices()
+        with open("room_indices.pickle", "wb") as file:
+            pickle.dump(room_indices, file)
+    else:
+        with open("room_indices.pickle", "rb") as file:
+            room_indices = pickle.load(file)
+
+    pool_size = 1
     pool = Pool(pool_size)
 
-    room_indices = get_room_indices()
     chunks = np.array_split(room_indices, pool_size)
 
     results = []
@@ -210,5 +223,10 @@ def save_lesson_times():
 
     rooms = sum([result.get() for result in results], [])
 
-    with open("lesson_times.pickle", "wb") as file:
-        pickle.dump(rooms, file)
+    # with open("lesson_times.pickle", "wb") as file:
+    #    pickle.dump(rooms, file)
+
+    json_data = json.dumps(rooms)
+
+    with open("lesson_times.json", "w") as file:
+        file.write(json_data)
